@@ -1,0 +1,30 @@
+{
+  "name": "soraDB",
+  "author": {
+    "name": "Galih Erlangga",
+    "email": "galiherlanggadev@gmail.com"
+  },
+  "description": "A native GUI database client using Wails, Svelte, and Bun.",
+  "version": "0.0.1",
+  "build": {
+    "platform": "darwin",
+    "wailsjsdir": "frontend/wailsjs",
+    "webview2": {
+      "strategy": "embed"
+    }
+  },
+  "frontend": {
+    "dir": "frontend",
+    "install": "bun install",
+    "build": "bun run build",
+    "bridge": "bun run dev"
+  },
+  "logger": {
+    "level": "info",
+    "stdout": true
+  },
+  "output": {
+    "directory": "build",
+    "name": "soradb"
+  }
+}

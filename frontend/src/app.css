@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#app, [data-sveltekit-preload-data] {
+  height: 100%;
+}
