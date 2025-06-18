@@ -9,3 +9,11 @@ export function Connect(arg1, arg2, arg3) {
 export function ExecuteQuery(arg1, arg2) {
   return window['go']['main']['DBService']['ExecuteQuery'](arg1, arg2);
 }
+
+export function GetDatabases(arg1) {
+  return window['go']['main']['DBService']['GetDatabases'](arg1);
+}
+
+export function GetTables(arg1, arg2) {
+  return window['go']['main']['DBService']['GetTables'](arg1, arg2);
+}

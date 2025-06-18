@@ -31,6 +31,14 @@ func (d *DBService) ExecuteQuery(connName string, query string) ([]map[string]in
 	return db.ExecuteQuery(connName, query)
 }
 
+func (d *DBService) GetDatabases(connName string) ([]string, error) {
+	return db.GetDatabases(connName)
+}
+
+func (d *DBService) GetTables(connName string, databaseName string) ([]map[string]interface{}, error) {
+	return db.GetTables(connName, databaseName)
+}
+
 //go:embed all:frontend/build
 var assets embed.FS
 

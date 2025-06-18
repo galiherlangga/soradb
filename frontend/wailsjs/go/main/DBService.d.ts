@@ -4,3 +4,7 @@
 export function Connect(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function ExecuteQuery(arg1:string,arg2:string):Promise<Array<Record<string, any>>>;
+
+export function GetDatabases(arg1:string):Promise<Array<string>>;
+
+export function GetTables(arg1:string,arg2:string):Promise<Array<Record<string, any>>>;
