@@ -7,7 +7,7 @@
 	export let connectionName: string = '';
 	export let isLoading: boolean = false;
 
-	function selectDatabase(database: any) {
+	function selectDatabase(database: { name: string; isSelected: boolean }) {
 		dispatch('select-database', database);
 	}
 
@@ -16,21 +16,24 @@
 	}
 </script>
 
-<div class="flex h-full w-64 flex-col bg-gray-800 border-r border-gray-700/50">
+<div class="flex h-full w-64 flex-col border-r border-gray-700/50 bg-gray-800">
 	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-gray-700/50 p-4">
+	<div class="flex flex-shrink-0 items-center justify-between border-b border-gray-700/50 p-4">
 		<div>
 			<h3 class="text-sm font-semibold text-white">Databases</h3>
-			<p class="text-xs text-gray-400 truncate">{connectionName}</p>
+			<p class="truncate text-xs text-gray-400">{connectionName}</p>
 		</div>
 		<button
 			class="group flex h-8 w-8 items-center justify-center rounded-lg bg-gray-700/50 transition-all duration-200 hover:bg-gray-600/50 hover:text-green-400"
 			on:click={refreshDatabases}
 			title="Refresh databases"
 			disabled={isLoading}
+			aria-label="Refresh databases"
 		>
 			<svg
-				class="h-4 w-4 text-gray-400 transition-all duration-200 group-hover:text-green-400 {isLoading ? 'animate-spin' : ''}"
+				class="h-4 w-4 text-gray-400 transition-all duration-200 group-hover:text-green-400 {isLoading
+					? 'animate-spin'
+					: ''}"
 				fill="none"
 				stroke="currentColor"
 				viewBox="0 0 24 24"
@@ -46,18 +49,25 @@
 	</div>
 
 	<!-- Database List -->
-	<div class="flex-1 overflow-y-auto p-2">
+	<div class="min-h-0 flex-1 overflow-y-auto p-2">
 		{#if isLoading}
 			<div class="flex items-center justify-center py-8">
 				<div class="text-center">
-					<div class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-green-500"></div>
+					<div
+						class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-green-500"
+					></div>
 					<p class="mt-2 text-xs text-gray-400">Loading databases...</p>
 				</div>
 			</div>
 		{:else if databases.length === 0}
 			<div class="flex items-center justify-center py-8">
 				<div class="text-center">
-					<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg
+						class="mx-auto h-12 w-12 text-gray-600"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+					>
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"
@@ -67,7 +77,7 @@
 					</svg>
 					<p class="mt-2 text-sm text-gray-400">No databases found</p>
 					<button
-						class="mt-2 text-xs text-green-400 hover:text-green-300 transition-colors duration-200"
+						class="mt-2 text-xs text-green-400 transition-colors duration-200 hover:text-green-300"
 						on:click={refreshDatabases}
 					>
 						Try refreshing
@@ -79,14 +89,20 @@
 				{#each databases as database (database.name)}
 					<button
 						class="group flex w-full items-center rounded-lg p-3 text-left transition-all duration-200 {database.isSelected
-							? 'bg-gradient-to-r from-green-600/20 to-emerald-600/20 border border-green-500/30 shadow-lg shadow-green-500/10'
-							: 'hover:bg-gray-700/50 border border-transparent'}"
+							? 'border border-green-500/30 bg-gradient-to-r from-green-600/20 to-emerald-600/20 shadow-lg shadow-green-500/10'
+							: 'border border-transparent hover:bg-gray-700/50'}"
 						on:click={() => selectDatabase(database)}
 					>
 						<!-- Database Icon -->
-						<div class="mr-3 flex h-8 w-8 items-center justify-center rounded-lg {database.isSelected ? 'bg-green-500/20' : 'bg-gray-700/50 group-hover:bg-gray-600/50'}">
+						<div
+							class="mr-3 flex h-8 w-8 items-center justify-center rounded-lg {database.isSelected
+								? 'bg-green-500/20'
+								: 'bg-gray-700/50 group-hover:bg-gray-600/50'}"
+						>
 							<svg
-								class="h-4 w-4 {database.isSelected ? 'text-green-400' : 'text-gray-400 group-hover:text-gray-300'}"
+								class="h-4 w-4 {database.isSelected
+									? 'text-green-400'
+									: 'text-gray-400 group-hover:text-gray-300'}"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -102,7 +118,11 @@
 
 						<!-- Database Name -->
 						<div class="flex-1">
-							<p class="text-sm font-medium {database.isSelected ? 'text-green-400' : 'text-white group-hover:text-gray-200'}">
+							<p
+								class="text-sm font-medium {database.isSelected
+									? 'text-green-400'
+									: 'text-white group-hover:text-gray-200'}"
+							>
 								{database.name}
 							</p>
 						</div>
@@ -126,13 +146,13 @@
 	</div>
 
 	<!-- Footer Info -->
-	<div class="border-t border-gray-700/50 p-3">
+	<div class="flex-shrink-0 border-t border-gray-700/50 p-3">
 		<div class="flex items-center justify-between">
 			<span class="text-xs text-gray-400">
 				{databases.length} database{databases.length !== 1 ? 's' : ''}
 			</span>
 			<div class="flex items-center gap-1">
-				<div class="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+				<div class="h-2 w-2 animate-pulse rounded-full bg-green-500"></div>
 				<span class="text-xs text-gray-400">Connected</span>
 			</div>
 		</div>

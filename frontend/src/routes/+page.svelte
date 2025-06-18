@@ -3,142 +3,182 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import DatabasePanel from '$lib/components/DatabasePanel.svelte';
 	import TablesPanel from '$lib/components/TablesPanel.svelte';
+	import TabBar from '$lib/components/TabBar.svelte';
+	import DataGrid from '$lib/components/DataGrid.svelte';
 	import { getDatabases, getTables } from '$lib/backends/database';
+	import type { Connection, Database, Table } from '$lib/types';
+	import {
+		connections,
+		databases,
+		tables,
+		selectedConnection,
+		selectedDatabase,
+		openTabs,
+		activeTabId,
+		activeTab,
+		isConnected,
+		showConnectionModal,
+		isDatabasesLoading,
+		isTablesLoading,
+		addConnection,
+		selectConnection,
+		selectDatabase,
+		removeConnection,
+		addTab,
+		closeTab,
+		setActiveTab,
+		closeAllTabs,
+		loadTabData,
+		refreshTabData,
+		changeTabPage,
+		changeTabPageSize
+	} from '$lib/stores/app';
 
-	let showModal = true;
-	let isConnected = false;
+	function onConnected(
+		event: CustomEvent<{ dbName: string; driver: string; selectedDatabase?: string }>
+	) {
+		const { dbName, driver, selectedDatabase } = event.detail;
+		console.log('Connected to the database successfully!', { dbName, driver, selectedDatabase });
 
-	// State management
-	let connections = [];
-	let databases = [];
-	let tables = [];
-	let selectedConnection = null;
-	let selectedDatabase = null;
-	let selectedTable = null;
-	let isDatabasesLoading = false;
-	let isTablesLoading = false;
-
-	function onConnected(event) {
-		const { dbName, driver } = event.detail;
-		console.log('Connected to the database successfully!', { dbName, driver });
-
-		// Add new connection
-		const newConnection = {
+		const newConnection: Connection = {
 			name: dbName,
 			driver: driver,
 			isActive: true
 		};
 
-		// Deactivate other connections
-		connections = connections.map((conn) => ({ ...conn, isActive: false }));
-		connections.push(newConnection);
-
-		selectedConnection = newConnection;
-		isConnected = true;
-
-		// Load databases for this connection
-		loadDatabases();
+		addConnection(newConnection);
+		loadDatabases(selectedDatabase);
 	}
 
 	function onAddConnection() {
-		showModal = true;
+		showConnectionModal.set(true);
 	}
 
-	function onSelectConnection(event) {
+	function onSelectConnection(event: CustomEvent<Connection>) {
 		const connection = event.detail;
-
-		// Update active connection
-		connections = connections.map((conn) => ({
-			...conn,
-			isActive: conn.name === connection.name
-		}));
-
-		selectedConnection = connection;
-		selectedDatabase = null;
-		selectedTable = null;
-		databases = [];
-		tables = [];
-
-		// Load databases for selected connection
+		selectConnection(connection);
 		loadDatabases();
 	}
 
-	function onSelectDatabase(event) {
+	function onRemoveConnection(event: CustomEvent<{ connectionName: string }>) {
+		const { connectionName } = event.detail;
+		removeConnection(connectionName);
+	}
+
+	function onSelectDatabase(event: CustomEvent<Database>) {
 		const database = event.detail;
-
-		// Update selected database
-		databases = databases.map((db) => ({
-			...db,
-			isSelected: db.name === database.name
-		}));
-
-		selectedDatabase = database;
-		selectedTable = null;
-		tables = [];
-
-		// Load tables for selected database
+		selectDatabase(database);
 		loadTables();
 	}
 
-	function onSelectTable(event) {
+	function onSelectTable(event: CustomEvent<Table>) {
 		const table = event.detail;
 
-		// Update selected table
-		tables = tables.map((tbl) => ({
-			...tbl,
-			isSelected: tbl.name === table.name
-		}));
+		// Update selected table in store
+		tables.update((tbls) =>
+			tbls.map((tbl) => ({
+				...tbl,
+				isSelected: tbl.name === table.name
+			}))
+		);
 
-		selectedTable = table;
 		console.log('Selected table:', table);
 	}
 
-	async function loadDatabases() {
-		if (!selectedConnection) return;
+	function onViewTable(event: CustomEvent<Table>) {
+		const table = event.detail;
+		const currentConnection = $selectedConnection;
+		const currentDatabase = $selectedDatabase;
 
-		isDatabasesLoading = true;
+		if (!currentConnection || !currentDatabase) {
+			console.error('No connection or database selected');
+			return;
+		}
+
+		// Create new tab
+		const newTab = {
+			connectionName: currentConnection.name,
+			databaseName: currentDatabase.name,
+			tableName: table.name,
+			tableType: table.type,
+			isLoading: true
+		};
+
+		addTab(newTab);
+
+		// Load data for the new tab
+		setTimeout(() => {
+			const tabs = $openTabs;
+			const latestTab = tabs[tabs.length - 1];
+			if (latestTab) {
+				loadTabData(latestTab.id);
+			}
+		}, 100);
+	}
+
+	async function loadDatabases(autoSelectDatabase?: string) {
+		const currentConnection = $selectedConnection;
+		if (!currentConnection) return;
+
+		isDatabasesLoading.set(true);
 
 		try {
-			const result = await getDatabases(selectedConnection.name);
-			if (result.success) {
-				databases = result.databases.map((name) => ({ name, isSelected: false }));
+			const result = await getDatabases(currentConnection.name);
+			if (result.success && result.data) {
+				const dbList = result.data.map((name) => ({
+					name,
+					isSelected: autoSelectDatabase ? name === autoSelectDatabase : false
+				}));
+				databases.set(dbList);
+
+				// If auto-select database is specified and exists, select it
+				if (autoSelectDatabase && result.data.includes(autoSelectDatabase)) {
+					const selectedDb = { name: autoSelectDatabase, isSelected: true };
+					selectedDatabase.set(selectedDb);
+					loadTables();
+				}
 			} else {
-				console.error('Failed to load databases:', result.error);
-				// Fallback to empty array
-				databases = [];
+				console.error(
+					'Failed to load databases:',
+					!result.success ? result.error : 'Unknown error'
+				);
+				databases.set([]);
 			}
 		} catch (error) {
 			console.error('Error loading databases:', error);
-			databases = [];
+			databases.set([]);
 		} finally {
-			isDatabasesLoading = false;
+			isDatabasesLoading.set(false);
 		}
 	}
 
 	async function loadTables() {
-		if (!selectedConnection || !selectedDatabase) return;
+		const currentConnection = $selectedConnection;
+		const currentDatabase = $selectedDatabase;
+		if (!currentConnection || !currentDatabase) return;
 
-		isTablesLoading = true;
+		isTablesLoading.set(true);
 
 		try {
-			const result = await getTables(selectedConnection.name, selectedDatabase.name);
-			if (result.success) {
-				tables = result.tables.map((table) => ({
-					name: table.name || table.TABLE_NAME || '',
-					type:
-						(table.type || table.TABLE_TYPE || 'table').toLowerCase() === 'view' ? 'view' : 'table',
-					rowCount: table.rowCount || table.TABLE_ROWS || undefined,
-					isSelected: false
-				}));
+			const result = await getTables(currentConnection.name, currentDatabase.name);
+			if (result.success && result.data) {
+				tables.set(
+					result.data.map((table) => ({
+						name: table.name,
+						type: table.type,
+						rowCount: table.rowCount,
+						isSelected: false
+					}))
+				);
 			} else {
-				console.error('Failed to load tables:', result.error);
-				tables = [];
+				console.error('Failed to load tables:', !result.success ? result.error : 'Unknown error');
+				tables.set([]);
 			}
 		} catch (error) {
 			console.error('Error loading tables:', error);
-			tables = [];
+			tables.set([]);
 		} finally {
-			isTablesLoading = false;
+			isTablesLoading.set(false);
 		}
 	}
 
@@ -149,41 +189,142 @@
 	function refreshTables() {
 		loadTables();
 	}
+
+	// Tab event handlers
+	function onSelectTab(event: CustomEvent<string>) {
+		const tabId = event.detail;
+		setActiveTab(tabId);
+	}
+
+	function onCloseTab(event: CustomEvent<string>) {
+		const tabId = event.detail;
+		closeTab(tabId);
+	}
+
+	function onCloseAllTabs() {
+		closeAllTabs();
+	}
+
+	// DataGrid event handlers
+	function onPageChange(event: CustomEvent<number>) {
+		const page = event.detail;
+		const currentTab = $activeTab;
+		if (currentTab) {
+			changeTabPage(currentTab.id, page);
+		}
+	}
+
+	function onPageSizeChange(event: CustomEvent<number>) {
+		const pageSize = event.detail;
+		const currentTab = $activeTab;
+		if (currentTab) {
+			changeTabPageSize(currentTab.id, pageSize);
+		}
+	}
+
+	function onRefreshData() {
+		const currentTab = $activeTab;
+		if (currentTab) {
+			refreshTabData(currentTab.id);
+		}
+	}
+
+	function onExportData() {
+		// TODO: Implement data export
+		console.log('Export data functionality not implemented yet');
+	}
 </script>
 
-{#if !isConnected}
+{#if !$isConnected}
 	<div class="flex min-h-screen items-center justify-center bg-gray-800">
 		<h1 class="text-4xl text-white">Sora DB</h1>
-		<ConnectionModal bind:show={showModal} on:connected={onConnected} />
+		<ConnectionModal bind:show={$showConnectionModal} on:connected={onConnected} />
 	</div>
 {:else}
 	<div class="flex h-screen bg-gray-900">
 		<!-- Sidebar -->
 		<Sidebar
-			{connections}
+			connections={$connections}
 			on:add-connection={onAddConnection}
 			on:select-connection={onSelectConnection}
+			on:remove-connection={onRemoveConnection}
 		/>
 
 		<!-- Database Panel -->
 		<DatabasePanel
-			{databases}
-			connectionName={selectedConnection?.name || ''}
-			isLoading={isDatabasesLoading}
+			databases={$databases}
+			connectionName={$selectedConnection?.name || ''}
+			isLoading={$isDatabasesLoading}
 			on:select-database={onSelectDatabase}
 			on:refresh-databases={refreshDatabases}
 		/>
 
 		<!-- Tables Panel -->
 		<TablesPanel
-			{tables}
-			databaseName={selectedDatabase?.name || ''}
-			isLoading={isTablesLoading}
+			tables={$tables}
+			databaseName={$selectedDatabase?.name || ''}
+			isLoading={$isTablesLoading}
 			on:select-table={onSelectTable}
+			on:view-table={onViewTable}
 			on:refresh-tables={refreshTables}
 		/>
 
+		<!-- Tab and Content Area -->
+		<div class="flex min-w-0 flex-1 flex-col">
+			<!-- Tab Bar -->
+			<div class="flex-shrink-0">
+				<TabBar
+					tabs={$openTabs}
+					activeTabId={$activeTabId}
+					on:select-tab={onSelectTab}
+					on:close-tab={onCloseTab}
+					on:close-all-tabs={onCloseAllTabs}
+				/>
+			</div>
+
+			<!-- Tab Content -->
+			<div class="min-h-0 flex-1">
+				{#if $activeTab}
+					<DataGrid
+						data={$activeTab.data}
+						isLoading={$activeTab.isLoading}
+						error={$activeTab.error}
+						tableName={$activeTab.tableName}
+						databaseName={$activeTab.databaseName}
+						connectionName={$activeTab.connectionName}
+						on:page-change={onPageChange}
+						on:page-size-change={onPageSizeChange}
+						on:refresh={onRefreshData}
+						on:export={onExportData}
+					/>
+				{:else}
+					<!-- Empty state when no tabs are open -->
+					<div class="flex h-full items-center justify-center bg-gray-800">
+						<div class="text-center">
+							<svg
+								class="mx-auto h-16 w-16 text-gray-600"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+								/>
+							</svg>
+							<h3 class="mt-4 text-lg font-medium text-gray-400">No Tables Open</h3>
+							<p class="mt-2 text-sm text-gray-500">
+								Select a table from the left panel and click "View" to open it in a new tab
+							</p>
+						</div>
+					</div>
+				{/if}
+			</div>
+		</div>
+
 		<!-- Connection Modal for adding new connections -->
-		<ConnectionModal bind:show={showModal} on:connected={onConnected} />
+		<ConnectionModal bind:show={$showConnectionModal} on:connected={onConnected} />
 	</div>
 {/if}

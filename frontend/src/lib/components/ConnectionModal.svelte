@@ -1,57 +1,101 @@
 <script lang="ts">
 	import { connectToDB } from '$lib/backends/connect';
 	import { createEventDispatcher } from 'svelte';
+	import type { ConnectionConfig } from '$lib/types';
+	import { buildDSN, validateConnectionConfig } from '$lib/utils';
 
 	const dispatch = createEventDispatcher();
 
 	export let show: boolean = false;
 
-	let dbType = 'mysql';
-	let host = 'localhost',
-		port = 3306,
-		user = '',
-		password = '',
-		dbName = '';
+	let dbType: 'mysql' | 'postgresql' | 'sqlite' = 'mysql';
+	let host = 'localhost';
+	let port = 3306;
+	let user = '';
+	let password = '';
+	let dbName = '';
+	let filePath = '';
 	let isConnecting = false;
+	let errors: string[] = [];
 
 	const connect = async () => {
 		if (isConnecting) return;
 
+		errors = [];
+
+		const config: ConnectionConfig = {
+			name: dbName || `${dbType}-${host}-${port}`,
+			driver: dbType,
+			host,
+			port,
+			username: user,
+			password,
+			database: dbName,
+			filePath
+		};
+
+		const validation = validateConnectionConfig(config);
+		if (!validation.isValid) {
+			errors = validation.errors;
+			return;
+		}
+
 		isConnecting = true;
-		let dsn = '';
-		if (dbType === 'sqlite') {
-			dsn = `file:${dbName}`;
-		} else if (dbType === 'postgres') {
-			dsn = `postgres://${user}:${password}@${host}:${port}/${dbName}`;
-		} else if (dbType == 'mysql') {
-			dsn = `${user}:${password}@tcp(${host}:${port})/${dbName}`;
+
+		try {
+			const dsn = buildDSN(config);
+			const result = await connectToDB({
+				name: config.name,
+				driver: config.driver,
+				dsn
+			});
+
+			if (result.success) {
+				show = false;
+				dispatch('connected', {
+					dbName: config.name,
+					driver: config.driver,
+					selectedDatabase: config.database || undefined
+				});
+				resetForm();
+			} else {
+				errors = [result.error || 'Connection failed'];
+			}
+		} catch (error) {
+			errors = [String(error)];
+		} finally {
+			isConnecting = false;
 		}
+	};
 
-		// Use a meaningful connection name if dbName is empty
-		const connectionName = dbName || `${dbType}-${host}-${port}`;
-
-		const result = await connectToDB({ name: connectionName, driver: dbType, dsn: dsn });
-
-		if (result.success) {
-			show = false;
-			dispatch('connected', { dbName: connectionName, driver: dbType });
-		} else {
-			console.error('Connection failed:', result.error);
-			alert(`Connection failed: ${result.error}`);
-		}
-
-		isConnecting = false;
+	const resetForm = () => {
+		dbType = 'mysql';
+		host = 'localhost';
+		port = 3306;
+		user = '';
+		password = '';
+		dbName = '';
+		filePath = '';
+		errors = [];
 	};
 
 	const closeModal = () => {
 		if (!isConnecting) {
 			show = false;
+			resetForm();
 		}
 	};
+
+	// Update port when database type changes
+	$: if (dbType === 'mysql') {
+		port = 3306;
+	} else if (dbType === 'postgresql') {
+		port = 5432;
+	}
 </script>
 
 {#if show}
-	<div class="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
 		<div
 			class="w-[420px] rounded-xl border border-gray-700/50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6 shadow-2xl backdrop-blur-md"
 		>
@@ -68,22 +112,12 @@
 			</div>
 
 			<div class="space-y-4">
-				<!-- Database Type Selector -->
-				<div class="space-y-2">
-					<label for="dbType" class="text-sm font-medium text-gray-300">Database Type</label>
-					<div class="relative">
-						<select
-							bind:value={dbType}
-							class="focus:bg-gray-750 hover:bg-gray-750 w-full cursor-pointer appearance-none rounded-lg border-0 bg-gray-800 px-4 py-3 pr-10 text-white transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none"
-						>
-							<option value="mysql" class="bg-gray-800 py-2 text-white">MySQL</option>
-							<option value="sqlite" class="bg-gray-800 py-2 text-white">SQLite</option>
-							<option value="postgres" class="bg-gray-800 py-2 text-white">PostgreSQL</option>
-						</select>
-						<!-- Custom Arrow -->
-						<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+				<!-- Error Display -->
+				{#if errors.length > 0}
+					<div class="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+						<div class="mb-2 flex items-center gap-2">
 							<svg
-								class="h-5 w-5 text-gray-400 transition-colors duration-200"
+								class="h-4 w-4 text-red-400"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -92,15 +126,31 @@
 									stroke-linecap="round"
 									stroke-linejoin="round"
 									stroke-width="2"
-									d="M8 9l4-4 4 4m0 6l-4 4-4-4"
-								></path>
+									d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+								/>
 							</svg>
+							<span class="text-sm font-medium text-red-400">Connection Error</span>
 						</div>
-						<!-- Focus indicator -->
-						<div
-							class="pointer-events-none absolute inset-0 rounded-lg opacity-0 ring-2 ring-green-500/40 transition-opacity duration-200 group-focus-within:opacity-100"
-						></div>
+						<ul class="space-y-1 text-xs text-red-300">
+							{#each errors as error}
+								<li>• {error}</li>
+							{/each}
+						</ul>
 					</div>
+				{/if}
+
+				<!-- Database Type Selector -->
+				<div class="space-y-2">
+					<label for="dbType" class="text-sm font-medium text-gray-300">Database Type</label>
+					<select
+						bind:value={dbType}
+						class="focus:bg-gray-750 hover:bg-gray-750 w-full cursor-pointer appearance-none rounded-lg border-0 bg-gray-800 px-4 py-3 pr-10 text-white transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none"
+						disabled={isConnecting}
+					>
+						<option value="mysql" class="bg-gray-800 py-2 text-white">MySQL</option>
+						<option value="sqlite" class="bg-gray-800 py-2 text-white">SQLite</option>
+						<option value="postgresql" class="bg-gray-800 py-2 text-white">PostgreSQL</option>
+					</select>
 				</div>
 
 				{#if dbType !== 'sqlite'}
@@ -110,7 +160,8 @@
 						<input
 							placeholder="localhost"
 							bind:value={host}
-							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none"
+							disabled={isConnecting}
+							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none disabled:opacity-50"
 						/>
 					</div>
 
@@ -118,10 +169,11 @@
 					<div class="space-y-2">
 						<label for="port" class="text-sm font-medium text-gray-300">Port</label>
 						<input
-							placeholder="3306"
+							placeholder={dbType === 'mysql' ? '3306' : '5432'}
 							type="number"
 							bind:value={port}
-							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none"
+							disabled={isConnecting}
+							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none disabled:opacity-50"
 						/>
 					</div>
 
@@ -131,7 +183,8 @@
 						<input
 							placeholder="username"
 							bind:value={user}
-							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none"
+							disabled={isConnecting}
+							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none disabled:opacity-50"
 						/>
 					</div>
 
@@ -142,22 +195,52 @@
 							placeholder="password"
 							type="password"
 							bind:value={password}
-							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none"
+							disabled={isConnecting}
+							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none disabled:opacity-50"
 						/>
 					</div>
-				{/if}
 
-				<!-- Database Name / File Path -->
-				<div class="space-y-2">
-					<label for="dbName" class="text-sm font-medium text-gray-300">
-						{dbType === 'sqlite' ? 'Database File Path' : 'Database Name'}
-					</label>
-					<input
-						placeholder={dbType === 'sqlite' ? '/path/to/database.db' : 'database_name'}
-						bind:value={dbName}
-						class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none"
-					/>
-				</div>
+					<!-- Database Name (Optional) -->
+					<div class="space-y-2">
+						<label for="dbName" class="text-sm font-medium text-gray-300"
+							>Database Name <span class="text-xs text-gray-500">(optional)</span></label
+						>
+						<input
+							placeholder="database_name (leave empty to show all databases)"
+							bind:value={dbName}
+							disabled={isConnecting}
+							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none disabled:opacity-50"
+						/>
+						<p class="text-xs text-gray-500">
+							If specified, this database will be auto-selected after connection
+						</p>
+					</div>
+				{:else}
+					<!-- SQLite File Path -->
+					<div class="space-y-2">
+						<label for="filePath" class="text-sm font-medium text-gray-300"
+							>Database File Path</label
+						>
+						<input
+							placeholder="/path/to/database.db"
+							bind:value={filePath}
+							disabled={isConnecting}
+							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none disabled:opacity-50"
+						/>
+					</div>
+
+					<!-- Connection Name for SQLite -->
+					<div class="space-y-2">
+						<label for="dbName" class="text-sm font-medium text-gray-300">Connection Name</label>
+						<input
+							placeholder="sqlite-connection"
+							bind:value={dbName}
+							disabled={isConnecting}
+							class="focus:bg-gray-750 hover:bg-gray-750 w-full rounded-lg border-0 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 transition-all duration-200 focus:ring-2 focus:ring-green-500/40 focus:outline-none disabled:opacity-50"
+						/>
+						<p class="text-xs text-gray-500">A unique name to identify this connection</p>
+					</div>
+				{/if}
 			</div>
 
 			<!-- Actions -->
@@ -215,5 +298,11 @@
 
 	.backdrop-blur-md {
 		backdrop-filter: blur(12px);
+	}
+
+	/* Custom gray-750 color since it's not in default Tailwind */
+	.focus\:bg-gray-750:focus,
+	.hover\:bg-gray-750:hover {
+		background-color: rgb(55 65 81);
 	}
 </style>
